@@ -8,11 +8,51 @@ tar xzvf EcoG2_data_cc2.tar.gz
 ```
 
 ```{r}
-library(dada2); packageVersion("dada2")
+library(dada2)
 ```
 
 ```{r}
-path <- "~/MiSeq_SOP" # CHANGE ME to the directory containing the fastq files after unzipping.
+path <- "~/CC_2/data"
 list.files(path)
+```
+
+```{r}
+# Creer une variable pour St_Stratif
+st_Stratif_10sep <- "/home/rstudio//CC_2/St_Stratif_10sept14"
+st_Stratif_11mars <- "/home/rstudio//CC_2/St_Stratif_11mars15"
+```
+
+```{r}
+# Creer une variable qui contient les donnees finissant par _R1 ou _R2 pour les trier par ordre alphabetique
+fnFs10 <- sort(list.files(st_Stratif_10sep, pattern="_R1.fastq"))
+fnRs10 <- sort(list.files(st_Stratif_10sep, pattern="_R2.fastq"))
+
+fnFs11 <- sort(list.files(st_Stratif_11mars, pattern="_R1.fastq"))
+fnRs11 <- sort(list.files(st_Stratif_11mars, pattern="_R2.fastq"))
+
+sample.names0 <- sapply(strsplit(basename(fnFs10), "_"), `[`, 1)
+sample.names1 <- sapply(strsplit(basename(fnRs10), "_"), `[`, 1)
+sample.names2 <- sapply(strsplit(basename(fnFs11), "_"), `[`, 1)
+sample.names3 <- sapply(strsplit(basename(fnRs11), "_"), `[`, 1)
+
+```
+
+```{r}
+filtFs10 <- file.path(path, "filtered", paste0(sample.names0, "_F_filt.fastq.gz"))
+filtRs10 <- file.path(path, "filtered", paste0(sample.names1, "_R_filt.fastq.gz"))
+names(filtFs10) <- sample.names0
+names(filtRs10) <- sample.names1
+
+filtFs11 <- file.path(path, "filtered", paste0(sample.names2, "_F_filt.fastq.gz"))
+filtRs11 <- file.path(path, "filtered", paste0(sample.names3, "_R_filt.fastq.gz"))
+names(filtFs11) <- sample.names2
+names(filtRs11) <- sample.names3rti
+```
+
+```{r}
+# Pour vérificer la presence de primer dans une sequence, on regarde si les sequences commmencent de la meme facon avec la fonction more "nom de la read" dans la console. On voit que nos sequences contiennent des primers. On va chercher à enlever les 18 premiers nucleotides de R1 et R2. 
+# trimLeft donne le nombre de nucleotide a enlever au debut de la sequence. Or on veut appliquer cette fonction aux R1 et aux R2.truncLec tronque les reads. 
+
+filterAndTrim(trimtruncLen =c(18,18))
 ```
 
