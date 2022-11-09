@@ -46,7 +46,7 @@ names(filtRs10) <- sample.names1
 filtFs11 <- file.path(path, "filtered", paste0(sample.names2, "_F_filt.fastq.gz"))
 filtRs11 <- file.path(path, "filtered", paste0(sample.names3, "_R_filt.fastq.gz"))
 names(filtFs11) <- sample.names2
-names(filtRs11) <- sample.names3rti
+names(filtRs11) <- sample.names3tri
 ```
 
 ```{r}
