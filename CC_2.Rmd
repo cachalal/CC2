@@ -2,12 +2,13 @@
 title: "CC_2"
 output: githubdocument
 ---
-```{bash}
+```{bash, eval=FALSE}
 wget pagesperso.univ-brest.fr/~maignien/teaching/M1-MFA/UE-Ecogenomique2/EcoG2_data_cc2.tar.gz
 tar xzvf EcoG2_data_cc2.tar.gz
 ```
 
 ```{r}
+library(Rcpp)
 library(dada2)
 ```
 
@@ -24,35 +25,174 @@ st_Stratif_11mars <- "/home/rstudio//CC_2/St_Stratif_11mars15"
 
 ```{r}
 # Creer une variable qui contient les donnees finissant par _R1 ou _R2 pour les trier par ordre alphabetique
-fnFs10 <- sort(list.files(st_Stratif_10sep, pattern="_R1.fastq"))
-fnRs10 <- sort(list.files(st_Stratif_10sep, pattern="_R2.fastq"))
+fnFs <- sort(list.files(st_Stratif_10sep, pattern="_R1.fastq", full.names=TRUE))
+fnRs <- sort(list.files(st_Stratif_10sep, pattern="_R2.fastq", full.names=TRUE))
 
-fnFs11 <- sort(list.files(st_Stratif_11mars, pattern="_R1.fastq"))
-fnRs11 <- sort(list.files(st_Stratif_11mars, pattern="_R2.fastq"))
-
-sample.names0 <- sapply(strsplit(basename(fnFs10), "_"), `[`, 1)
-sample.names1 <- sapply(strsplit(basename(fnRs10), "_"), `[`, 1)
-sample.names2 <- sapply(strsplit(basename(fnFs11), "_"), `[`, 1)
-sample.names3 <- sapply(strsplit(basename(fnRs11), "_"), `[`, 1)
-
+# pour avoir le nom du fichier
+sample.names <- sapply(strsplit(basename(fnFs), "_R"), `[`, 1)
 ```
 
 ```{r}
-filtFs10 <- file.path(path, "filtered", paste0(sample.names0, "_F_filt.fastq.gz"))
-filtRs10 <- file.path(path, "filtered", paste0(sample.names1, "_R_filt.fastq.gz"))
-names(filtFs10) <- sample.names0
-names(filtRs10) <- sample.names1
+plotQualityProfile(fnFs[1:2])
+```
 
-filtFs11 <- file.path(path, "filtered", paste0(sample.names2, "_F_filt.fastq.gz"))
-filtRs11 <- file.path(path, "filtered", paste0(sample.names3, "_R_filt.fastq.gz"))
-names(filtFs11) <- sample.names2
-names(filtRs11) <- sample.names3tri
+
+```{r}
+plotQualityProfile(fnRs[1:2])
 ```
 
 ```{r}
-# Pour vérificer la presence de primer dans une sequence, on regarde si les sequences commmencent de la meme facon avec la fonction more "nom de la read" dans la console. On voit que nos sequences contiennent des primers. On va chercher à enlever les 18 premiers nucleotides de R1 et R2. 
-# trimLeft donne le nombre de nucleotide a enlever au debut de la sequence. Or on veut appliquer cette fonction aux R1 et aux R2.truncLec tronque les reads. 
-
-filterAndTrim(trimtruncLen =c(18,18))
+# Place filtered files in filtered/ subdirectory
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
 ```
 
+# Pour verifier la presence de primer dans une sequence, on regarde si les sequences commmencent de la meme facon avec la fonction more "nom de la read" dans la console. On voit que nos sequences contiennent des primers. On va chercher a enlever les 18 premiers nucleotides de R1 et R2. 
+# trimLeft donne le nombre de nucleotide a enlever au debut de la sequence. Or on veut appliquer cette fonction aux R1 et aux R2.truncLec tronque les reads.
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, trimLeft = c(18,18), truncLen=c(240,190),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=TRUE)
+head(out)
+```
+
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+```
+
+```{r}
+errR <- learnErrors(filtRs, multithread=TRUE)
+```
+
+```{r}
+plotErrors(errF, nominalQ=TRUE)
+```
+
+```{r}
+#algorithme d'inference de l'echantillon
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
+```
+
+```{r}
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
+```
+
+```{r}
+dadaFs[[1]]
+```
+
+```{r}
+#fusion des reads avant et arriere
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+#Les lectures appariees qui ne se chevauchaient pas exactement ont ete supprimees par mergePairs, ce qui a permis de reduire davantage les resultats errones.
+# Inspection du data.frame de fusion du premier echantillon
+head(mergers[[1]])
+```
+
+```{r}
+# construction tableau des variantes de sequences d'amplicons
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+# pour avoir les longueurs de séquence
+table(nchar(getSequences(seqtab)))
+```
+
+```{r}
+# pour retirer les chimeres
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim)
+```
+
+```{r}
+sum(seqtab.nochim)/sum(seqtab)
+```
+
+```{r}
+# examiner le nombre de reads qui ont franchi chaque étape du pipeline
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+```{bash}
+# acqisition de la base de données pour creer la taxonomie
+wget https://zenodo.org/record/4587955/files/silva_nr99_v138.1_train_set.fa.gz?download=1
+```
+
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim, "silva_nr99_v138.1_train_set.fa.gz?download=1", multithread=TRUE)
+```
+
+```{r}
+# Suppression des noms de sequence pour l'affichage uniquement
+taxa.print <- taxa
+rownames(taxa.print) <- NULL
+head(taxa.print)
+```
+
+```{r}
+library(phyloseq); packageVersion("phyloseq")
+library(Biostrings); packageVersion("Biostrings")
+library(ggplot2); packageVersion("ggplot2")
+```
+
+```{r}
+theme_set(theme_bw())
+```
+
+```{r}
+# crer les colonnes de la matrice
+samples.out <- rownames(seqtab.nochim)
+# creer une matrice qui divise les elements de samples.out en sous-chaines en fonction des correspondances "D"
+subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+# extraire les elements 1,1
+gender <- substr(subject,1,1)
+# extraire les elements 2,999
+subject <- substr(subject,2,999)
+day <- as.integer(sapply(strsplit(samples.out, "D"), `[`, 2))
+samdf <- data.frame(Subject=subject, Gender=gender, Day=day)
+samdf$When <- "Early"
+samdf$When[samdf$Day>100] <- "Late"
+rownames(samdf) <- samples.out
+```
+
+```{r}
+ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
+               sample_data(samdf), 
+               tax_table(taxa))
+ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sample
+```
+
+```{r}
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+ps
+```
+
+```{r}
+plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
+```
+
+```{r}
+ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
+```
+
+```{r}
+plot_ordination(ps.prop, ord.nmds.bray, color="When", title="Bray NMDS")
+```
+
+```{r}
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+ps.top20 <- prune_taxa(top20, ps.top20)
+plot_bar(ps.top20, x="Day", fill="Family") + facet_wrap(~When, scales="free_x")
+```
+
+# quelle est la contribution de la profondeur et de la saison dans la structuration des communautés microbienne planctonique de la rade Brest (station 5)?
